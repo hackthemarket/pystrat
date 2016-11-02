@@ -249,7 +249,7 @@ def sharpe(Returns) :
 
 def random_strat( U, cfg, kvargs ) :
     # random portfolio strategy: picks 'num_names' randomly
-    nnames = kvargs.pop('num_names',10)
+    nnames = kvargs.get('num_names',10)
     names = random.sample(U.Sym, nnames )
     U.Weight = np.where( U.Sym.isin( names ), 1/float(nnames), 0 )
                  
@@ -257,7 +257,7 @@ def random_strat( U, cfg, kvargs ) :
 
 def best_strat( U, cfg, kvargs ) :
     # portfolio strategy: picks 'num_names' based on trailing return
-    nnames = kvargs.pop('num_names',10)
+    nnames = kvargs.get('num_names',10)
     #pdb.set_trace()
     best = U.sort_values('Return',ascending=False,
                          na_position='last')['Sym'].head(10).values
@@ -266,7 +266,7 @@ def best_strat( U, cfg, kvargs ) :
 
 def worst_strat( U, cfg, kvargs ) :
     # portfolio strategy: picks 'num_names' based on trailing return
-    nnames = kvargs.pop('num_names',10)
+    nnames = kvargs.get('num_names',10)
     #pdb.set_trace()
     worst = U.sort_values('Return',ascending=True,
                           na_position='last')['Sym'].head(10).values
