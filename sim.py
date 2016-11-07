@@ -33,8 +33,24 @@ import pdb
 
 pd.set_option('display.width',500)
 
-# default simulator cfg dictionary
-DEF_SIM_CFG= { 'FrictionInBps': 10,
+# define constant friction function
+DefaultBPS = 10
+def FrictionInBps(U, cfg, kvargs):
+    """ default FrictionInBps function just returns default,
+        but the interface receives all strategy info after 
+        strategy is run, so one can create more realistic 
+        impact models """
+    return DefaultBPS
+
+""" default simulator cfg dictionary.
+    default keys/values:
+    FrictionInBps - function that takes same args as strategy. 
+                    by default, returns DefaultBps.
+    InitBal - in $s
+    Reinvest - should we reinvest our winnings or constantly assume we have InitBal?
+    Verbose 
+"""
+DEF_SIM_CFG= { 'FrictionInBps': FrictionInBps,
                'Verbose'      : True,
                'InitBal'      : 1e7,
                'Reinvest'     : True  }
@@ -88,14 +104,14 @@ def squarem( df, sym='Sym', min_pct=.9 ) :
     return z
 
 
-# constructs universe appropriate for use with simulator; any additional columns
-#  passed-in via ellipsis will be added to table as named
-#
 def prep_univ( dateTime, symbol, 
                open, high, low, close, volume,
                product, instrument='STK', multiplier=1.0,expiry=None,
                strike=None,adv_days=20,sd_days=20, open2close_returns=True,
                scaleAndCenter=False,  **more_cols) :
+    # constructs universe appropriate for use with simulator; any additional columns
+    #  passed-in via ellipsis will be added to table as named
+    #
     
     U = pd.DataFrame({'Sym': symbol, 
                       'Product' : product, 'Instrument':instrument,
@@ -182,7 +198,7 @@ def __sim ( U, FUN, cfg, B, kvargs) :
     tospend = NAV/U.Weight
     U.Qty = np.round((NAV*U.Weight) / (U.Multiplier*U.Close))
     U.Trade_Qty  = U.Qty - U.Prev_Qty
-    fbps = 1e-4 * cfg['FrictionInBps']
+    fbps = 1e-4 * cfg['FrictionInBps'](U,cfg,kvargs)
     U.Trade_Fric = U.Trade_Qty * U.Close * U.Multiplier * fbps 
     U.PNL = (U.Fwd_Close - U.Close) * U.Qty * U.Multiplier
     U.NET_PNL = U.PNL - U.Trade_Fric
@@ -201,7 +217,7 @@ def __sim ( U, FUN, cfg, B, kvargs) :
     bb.Short_Dlrs = (shorts.Close * shorts.Multiplier * shorts.Qty).sum()
     bb.Num_Trades = len(trades.index)
     bb.Turnover = (trades.Close * trades.Multiplier
-                   * trades.Trade_Qty).sum()/NAV
+                   * trades.Trade_Qty.abs()).sum()/NAV
     
     if loop > 0 :
         yb = B.iloc[loop-1]
@@ -216,9 +232,16 @@ def __sim ( U, FUN, cfg, B, kvargs) :
     return U
 
 
-# simulator...
-#
 def sim( univ, sim_FUN=eq_wt, cfg=DEF_SIM_CFG.copy(), kvargs={} ) :
+    """ simulator: runs simulation and returns a table of activity and balances.
+        args:
+          univ - historical data that's been produced by prep_univ
+          sim_FUN - strategy function.  by default, equal weights univ.
+          cfg - cfg info.  by default
+          kvargs - strat-specific extra data in a dict
+
+    """
+#
     t0 = time.time()
     all_times = univ.index.unique().values
 
@@ -274,8 +297,9 @@ def worst_strat( U, cfg, kvargs ) :
     return U
 
 
-# run given strat repeatedly, plotting NAVs and Returning them
 def rtest(U,FUN=random_strat, runs=10):
+# run given strat repeatedly, plotting NAVs and Returning them
+#   nb: this only makes sense if the strategy is random...
     # run random_strat 'runs' times and plot NAVs
     N = None
     for i in range(runs) :
@@ -285,40 +309,16 @@ def rtest(U,FUN=random_strat, runs=10):
     N.plot(legend=False)
     return N
 
+def sim_test():
 # dev driver
-def sim_go():
-    p = 'z.pkl'
-    P = pickle.load(open(p))
-    log.info('loaded <%s>',p)
+    f = 'U.pkl'
+    P = pickle.load(open(f))
+    log.info('loaded <%s>',f)
     P.describe()
-    atvi1=P[P.Sym=='ATVI']
-    atvi1.Close.plot()
-    
-    Z = squarem(P)
-    atvi2=Z[Z.Sym=='ATVI']
-    atvi2.Close.plot()
-
-    Ubig = prep_univ( Z.index, Z.Sym, Z.Open, Z.High, Z.Low,
-                      Z.Close, Z.Volume, Z.Sym)
-
-    Usmall = Ubig[ Ubig.Sym.isin(['AAPL','MSFT']) ]
-    Usmall = Usmall[Usmall.index > '2016-01-01']
-
-    A = Ubig.groupby('Sym').aggregate( 
-        lambda x: x.Close.mean() * x.ADV.mean() ).ADV.reset_index()
-    tophalf = A[A.ADV > A.ADV.quantile()]
-    Umed = Ubig[ Ubig.Sym.isin( tophalf.Sym ) ]
-    
-    S,B = sim( Usmall )
-    S.to_csv('~/s.csv')
-    B.to_csv('~/b.csv')
-    B.NAV.plot()
-    B.Turnover.plot()
-
-    import cProfile
-    import pstats
-    cProfile.run('sim(Usmall)','sstats')
-    p = pstats.Stats('sstats')
-    p.strip_dirs().sort_stats('cumtime').print_stats(10)
-    Z = squarem(u)
-
+    U = P[P.index >= '2005-01-01']
+    U.describe()
+    import sim
+    _,B = sim.sim(U)
+    #plot NAV
+    B.NAV.plot(title='Equal Weight Everyone')
+    return B
